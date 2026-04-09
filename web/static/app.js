@@ -411,19 +411,37 @@ function showResults(jobId, data) {
   chatUnread.classList.add('show');
 }
 
-function resetToUpload() {
+// "Try Again" — keep files and form values, just return to upload state
+function tryAgain() {
   rightIdle.style.display = '';
   progressOvl.classList.remove('show');
   resultsOvl.classList.remove('show');
-  selectedFiles = []; chatHistory = []; currentJobId = null;
-  fileInput.value = ''; renderFiles();
-  companyInput.value = ''; yearsInput.value = '';
+  chatHistory = []; currentJobId = null;
+  // reset upload progress on each file so they can be re-uploaded
+  selectedFiles = selectedFiles.map(f => ({ ...f, uploadId: null, path: null, progress: 0 }));
+  renderFiles();
   hideAutoBanner(); resetOrbs(); resetBtn();
   document.getElementById('ns-section').style.display = 'none';
   document.getElementById('commentary-section').style.display = 'none';
   document.getElementById('dl-excel').classList.remove('disabled');
   chatWidget.style.display = 'none'; closeChatPanel();
-  // clear pipeline error block
+  const eb = document.getElementById('pipe-err'); if (eb) eb.remove();
+  validateForm();
+}
+
+// "New Analysis" — full reset including files and form
+function resetToUpload() {
+  selectedFiles = []; chatHistory = []; currentJobId = null;
+  fileInput.value = ''; renderFiles();
+  companyInput.value = ''; yearsInput.value = '';
+  rightIdle.style.display = '';
+  progressOvl.classList.remove('show');
+  resultsOvl.classList.remove('show');
+  hideAutoBanner(); resetOrbs(); resetBtn();
+  document.getElementById('ns-section').style.display = 'none';
+  document.getElementById('commentary-section').style.display = 'none';
+  document.getElementById('dl-excel').classList.remove('disabled');
+  chatWidget.style.display = 'none'; closeChatPanel();
   const eb = document.getElementById('pipe-err'); if (eb) eb.remove();
 }
 
@@ -489,7 +507,7 @@ function showPipelineError(msg) {
   });
   b.innerHTML = `<div style="font-weight:700;margin-bottom:6px;">Error</div>
     <div style="margin-bottom:12px;word-break:break-word;">${esc(msg)}</div>
-    <button onclick="resetToUpload()" style="background:none;border:1px solid rgba(248,113,113,0.3);
+    <button onclick="tryAgain()" style="background:none;border:1px solid rgba(248,113,113,0.3);
       border-radius:6px;color:var(--error);padding:6px 14px;font-size:12.5px;cursor:pointer;font-family:inherit;">
       ← Try Again</button>`;
   progressOvl.appendChild(b);

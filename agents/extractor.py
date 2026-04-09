@@ -360,7 +360,11 @@ def extract_from_pdf(
         except ConfigurationError:
             raise
         except Exception as exc:
-            log.warning("Claude API extraction failed (%s) — using local extraction only.", exc)
+            import traceback
+            log.warning(
+                "Claude API extraction failed — using local extraction only.\n%s",
+                traceback.format_exc(),
+            )
     elif ANTHROPIC_API_KEY:
         log.info("Local confidence ≥ %.0f%% — skipping Claude API pass.", CONFIDENCE_API_FALLBACK * 100)
     else:
@@ -413,10 +417,16 @@ def validate_relevance(financial_data: FinancialData, source_name: str = "docume
         for y in years
     )
     if not has_revenue:
+        api_hint = (
+            " Claude API extraction was also attempted but found no data — "
+            "verify the company name, fiscal years, and that the PDF contains selectable text."
+            if ANTHROPIC_API_KEY else
+            " Set ANTHROPIC_API_KEY to enable AI-powered extraction for complex PDFs."
+        )
         raise ValidationError(
             f"'{source_name}' yielded no revenue data. "
-            "The file may not be a financial report, or it may be a scanned image PDF "
-            "with no text layer."
+            "The file may not be a financial report, or the fiscal years entered "
+            "do not match the report." + api_hint
         )
 
     if financial_data.metadata.overall_confidence < CONFIDENCE_MIN_ACCEPT:
