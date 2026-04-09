@@ -1,26 +1,37 @@
 """
-Agent 1: Financial Statement Extractor
+Extractor Agent — financial statement extraction from PDF or JSON.
 
-Two paths:
-  - extract_from_pdf()  → calls Claude API with PDF (two-pass: extract + verify)
-  - extract_from_json() → loads pre-structured JSON (for testing / manual input)
+Public API
+----------
+extract_from_pdf(path, company_name, fiscal_years, currency, unit) -> FinancialData
+extract_from_json(path) -> FinancialData
+validate_relevance(financial_data, source_name) -> None   # raises ValidationError
+merge_financial_data(data_list) -> FinancialData
 """
 import json
 import re
+import threading
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import anthropic
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from config.settings import (
     ANTHROPIC_API_KEY,
+    CONFIDENCE_API_BOOST,
+    CONFIDENCE_API_BOOST_CAP,
+    CONFIDENCE_API_FALLBACK,
+    CONFIDENCE_MIN_ACCEPT,
     MAX_TOKENS,
     MODEL_NAME,
     PDF_SMALL_THRESHOLD,
     PDF_TOC_PAGES,
     RETRY_ATTEMPTS,
+    RETRY_WAIT_MAX,
+    RETRY_WAIT_MIN,
 )
+from errors import ConfigurationError, ExtractionError, ValidationError
 from models.company_data import ExtractionMetadata, FinancialData
 from models.financial_statements import BalanceSheet, CashFlowStatement, IncomeStatement
 from schemas.extraction_tool_schema import EXTRACTION_TOOL, TOOL_CHOICE
@@ -32,91 +43,99 @@ from utils.pdf_handler import (
     validate_pdf,
 )
 
-log = get_logger()
-_client: Optional[anthropic.Anthropic] = None
+log = get_logger(__name__)
+
+# ── Thread-safe lazy client ───────────────────────────────────────────────────
+_client:      Optional[anthropic.Anthropic] = None
+_client_lock: threading.Lock               = threading.Lock()
 
 
 def _get_client() -> anthropic.Anthropic:
     global _client
     if _client is None:
-        if not ANTHROPIC_API_KEY:
-            raise RuntimeError(
-                "ANTHROPIC_API_KEY not set. Create a .env file with your key "
-                "(see .env.example)."
-            )
-        _client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        with _client_lock:
+            if _client is None:  # double-checked locking
+                if not ANTHROPIC_API_KEY:
+                    raise ConfigurationError(
+                        "ANTHROPIC_API_KEY is not set — cannot call extraction API."
+                    )
+                _client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     return _client
 
 
-# ── TOC detection (large PDFs) ────────────────────────────────────────────────
+# ── TOC page detection (large PDFs) ──────────────────────────────────────────
 
-def _detect_financial_pages(pdf_b64: str, total_pages: int) -> tuple[int, int]:
+def _detect_financial_pages(pdf_b64: str, total_pages: int) -> Tuple[int, int]:
     """
-    Send first PDF_TOC_PAGES pages to Claude to find which pages contain
-    the financial statements. Returns (start_page, end_page) estimates.
+    Send the first PDF_TOC_PAGES pages to Claude to find which pages contain
+    the financial statements. Returns (start_page, end_page).
+    Falls back to the last third of the document on any failure.
     """
-    log.info("Large PDF detected — running TOC page detection...")
-    client = _get_client()
-    resp = client.messages.create(
-        model=MODEL_NAME,
-        max_tokens=512,
-        messages=[{
-            "role": "user",
-            "content": [
-                {
-                    "type": "document",
-                    "source": {"type": "base64", "media_type": "application/pdf",
-                               "data": pdf_b64},
-                },
-                {
-                    "type": "text",
-                    "text": (
-                        "This is a company annual report. Look at the table of contents "
-                        "and identify which page numbers contain the three financial statements "
-                        "(Income Statement/P&L, Balance Sheet, Cash Flow Statement). "
-                        "Reply with ONLY a JSON object like: "
-                        '{"start_page": 120, "end_page": 155} '
-                        "using the page numbers where the financial statements begin and end."
-                    ),
-                },
-            ],
-        }],
-    )
-    text = resp.content[0].text
+    log.info("Large PDF — running TOC page detection…")
     try:
-        match = re.search(r'\{.*?"start_page".*?\}', text, re.DOTALL)
+        resp = _get_client().messages.create(
+            model=MODEL_NAME,
+            max_tokens=512,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {
+                        "type": "document",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "application/pdf",
+                            "data": pdf_b64,
+                        },
+                    },
+                    {
+                        "type": "text",
+                        "text": (
+                            "This is a company annual report. Look at the table of contents "
+                            "and identify which page numbers contain the three financial statements "
+                            "(Income Statement/P&L, Balance Sheet, Cash Flow Statement). "
+                            "Reply with ONLY a JSON object like: "
+                            '{"start_page": 120, "end_page": 155}'
+                        ),
+                    },
+                ],
+            }],
+        )
+        match = re.search(r'\{"start_page".*?\}', resp.content[0].text, re.DOTALL)
         if match:
             data = json.loads(match.group())
             return int(data["start_page"]), int(data["end_page"])
-    except Exception:
-        pass
-    # Fallback: guess last third of report
+    except Exception as exc:
+        log.warning("TOC detection failed (%s) — falling back to last third.", exc)
+
     start = max(1, total_pages * 2 // 3)
     return start, total_pages
 
 
-# ── Core API call (with retry) ─────────────────────────────────────────────────
+# ── Core Claude API calls ─────────────────────────────────────────────────────
 
-@retry(stop=stop_after_attempt(RETRY_ATTEMPTS), wait=wait_exponential(multiplier=1, min=2, max=10))
+@retry(
+    stop=stop_after_attempt(RETRY_ATTEMPTS),
+    wait=wait_exponential(multiplier=1, min=RETRY_WAIT_MIN, max=RETRY_WAIT_MAX),
+    reraise=True,
+)
 def _call_extraction_api(
-    pdf_b64: str,
+    pdf_b64:      str,
     company_name: str,
-    years: List[int],
-    currency: str = "INR",
-    unit: str = "Crores",
+    years:        List[int],
+    currency:     str = "INR",
+    unit:         str = "Crores",
 ) -> dict:
-    """Pass 1: Extract financial statements using Claude tool_use."""
+    """Pass 1 — extract financial statements using Claude tool_use."""
     system_prompt = Path("prompts/extraction_system.txt").read_text()
     user_template = Path("prompts/extraction_user.txt").read_text()
-    user_prompt = user_template.format(
+    user_prompt   = user_template.format(
         company_name=company_name,
         years=", ".join(str(y) for y in years),
         currency=currency,
         unit=unit,
     )
 
-    client = _get_client()
-    response = client.messages.create(
+    response = _get_client().messages.create(
         model=MODEL_NAME,
         max_tokens=MAX_TOKENS,
         system=system_prompt,
@@ -127,28 +146,33 @@ def _call_extraction_api(
             "content": [
                 {
                     "type": "document",
-                    "source": {"type": "base64", "media_type": "application/pdf",
-                               "data": pdf_b64},
-                    "cache_control": {"type": "ephemeral"},  # reuse across two passes
+                    "source": {
+                        "type": "base64",
+                        "media_type": "application/pdf",
+                        "data": pdf_b64,
+                    },
+                    "cache_control": {"type": "ephemeral"},
                 },
                 {"type": "text", "text": user_prompt},
             ],
         }],
     )
 
-    # Extract tool_use block
     for block in response.content:
         if block.type == "tool_use":
-            return block.input
-    raise ValueError("Claude did not return a tool_use block — extraction failed.")
+            return block.input  # type: ignore[return-value]
+    raise ExtractionError("Claude did not return a tool_use block — extraction failed.")
 
 
-@retry(stop=stop_after_attempt(RETRY_ATTEMPTS), wait=wait_exponential(multiplier=1, min=2, max=10))
+@retry(
+    stop=stop_after_attempt(RETRY_ATTEMPTS),
+    wait=wait_exponential(multiplier=1, min=RETRY_WAIT_MIN, max=RETRY_WAIT_MAX),
+    reraise=True,
+)
 def _call_verification_api(pdf_b64: str, extracted_json: str) -> dict:
-    """Pass 2: Ask Claude to verify its own extraction. PDF is reused from cache."""
+    """Pass 2 — ask Claude to verify its own extraction. PDF reused from cache."""
     system_prompt = Path("prompts/verification_system.txt").read_text()
-    client = _get_client()
-    response = client.messages.create(
+    response = _get_client().messages.create(
         model=MODEL_NAME,
         max_tokens=1024,
         system=system_prompt,
@@ -157,8 +181,11 @@ def _call_verification_api(pdf_b64: str, extracted_json: str) -> dict:
             "content": [
                 {
                     "type": "document",
-                    "source": {"type": "base64", "media_type": "application/pdf",
-                               "data": pdf_b64},
+                    "source": {
+                        "type": "base64",
+                        "media_type": "application/pdf",
+                        "data": pdf_b64,
+                    },
                     "cache_control": {"type": "ephemeral"},
                 },
                 {
@@ -166,7 +193,7 @@ def _call_verification_api(pdf_b64: str, extracted_json: str) -> dict:
                     "text": (
                         "Here is the extracted financial data:\n\n"
                         f"```json\n{extracted_json}\n```\n\n"
-                        "Verify this data against the document and return the JSON result."
+                        "Verify against the document and return the JSON result."
                     ),
                 },
             ],
@@ -182,22 +209,22 @@ def _call_verification_api(pdf_b64: str, extracted_json: str) -> dict:
     return {"passes_all_checks": True, "issues": [], "warnings": [], "corrected_values": {}}
 
 
-# ── Data Parsing ──────────────────────────────────────────────────────────────
+# ── Data parsing ──────────────────────────────────────────────────────────────
 
 def _parse_raw_data(raw: dict) -> FinancialData:
     """Convert the raw dict returned by Claude into validated Pydantic models."""
     income_statements = [IncomeStatement(**s) for s in raw.get("income_statements", [])]
-    balance_sheets = [BalanceSheet(**s) for s in raw.get("balance_sheets", [])]
-    cash_flows = [CashFlowStatement(**s) for s in raw.get("cash_flow_statements", [])]
+    balance_sheets    = [BalanceSheet(**s)       for s in raw.get("balance_sheets", [])]
+    cash_flows        = [CashFlowStatement(**s)  for s in raw.get("cash_flow_statements", [])]
 
     fiscal_years = raw.get("fiscal_years") or sorted(
-        set(s.fiscal_year for s in income_statements + balance_sheets + cash_flows)
+        {s.fiscal_year for s in income_statements + balance_sheets + cash_flows}
     )
-
-    avg_conf = 1.0
     all_stmts = income_statements + balance_sheets + cash_flows
-    if all_stmts:
-        avg_conf = sum(s.extraction_confidence for s in all_stmts) / len(all_stmts)
+    avg_conf  = (
+        sum(s.extraction_confidence for s in all_stmts) / len(all_stmts)
+        if all_stmts else 1.0
+    )
 
     return FinancialData(
         company_name=raw.get("company_name", "Unknown"),
@@ -217,82 +244,20 @@ def _parse_raw_data(raw: dict) -> FinancialData:
     )
 
 
-# ── Public API ────────────────────────────────────────────────────────────────
-
-def extract_from_pdf(
-    path: str,
-    company_name: str,
-    fiscal_years: List[int],
-    currency: str = "INR",
-    unit: str = "Crores",
-) -> FinancialData:
-    """
-    Extract financial statements from a PDF annual report.
-
-    Strategy (automatic):
-      1. Always run local word-position parser (pdfplumber) — no API key needed,
-         exact numbers, no hallucination risk.
-      2. If ANTHROPIC_API_KEY is set AND local confidence is below 0.75,
-         fall back to Claude API for a verification / gap-fill pass.
-
-    This means PDFs work correctly even without an API key.
-    """
-    if not validate_pdf(path):
-        raise FileNotFoundError(f"Invalid or missing PDF: {path}")
-
-    total_pages = get_pdf_page_count(path)
-    log.info(f"PDF loaded: {path} ({total_pages} pages)")
-
-    # ── Pass 1: Local extraction (always runs) ────────────────────────────────
-    from agents.pdf_parser import extract_local
-    log.info("Local extraction: parsing financial statements from PDF text layer…")
-    financial_data = extract_local(path, company_name, fiscal_years, currency, unit)
-    conf = financial_data.metadata.overall_confidence
-    log.info(
-        f"Local extraction complete. Years: {financial_data.fiscal_years}. "
-        f"Confidence: {conf:.0%}"
-    )
-
-    # ── Pass 2 (optional): Claude API verification / gap-fill ─────────────────
-    if ANTHROPIC_API_KEY and conf < 0.75:
-        log.info("Confidence below 75% — running Claude API verification pass…")
-        try:
-            if total_pages > PDF_SMALL_THRESHOLD:
-                toc_b64 = extract_page_range_as_base64(path, 1, PDF_TOC_PAGES)
-                start_p, end_p = _detect_financial_pages(toc_b64, total_pages)
-                pdf_b64 = extract_page_range_as_base64(path, start_p, end_p)
-            else:
-                pdf_b64 = load_pdf_as_base64(path)
-
-            raw = _call_extraction_api(pdf_b64, company_name, fiscal_years, currency, unit)
-            api_data = _parse_raw_data(raw)
-
-            # Merge: prefer local values (exact), fill gaps from API
-            financial_data = _merge_extractions(financial_data, api_data)
-            log.info("Claude API gap-fill complete.")
-        except Exception as e:
-            log.warning(f"Claude API pass failed ({e}) — using local extraction only.")
-    elif ANTHROPIC_API_KEY:
-        log.info("Local confidence ≥ 75% — skipping Claude API pass.")
-    else:
-        log.info("No API key set — using local extraction only.")
-
-    return financial_data
-
+# ── Extraction merge ──────────────────────────────────────────────────────────
 
 def _merge_extractions(local: FinancialData, api: FinancialData) -> FinancialData:
     """
-    Merge local + API extractions: keep local values where they exist,
-    fill None fields with API values.
+    Merge local + API extractions: prefer local values (exact pixel-level),
+    fill None fields with API values.  Boosts overall confidence slightly.
     """
     from dataclasses import fields as dc_fields
 
-    def merge_stmt(local_stmt, api_stmt):
+    def _merge_stmt(local_stmt, api_stmt):
         if api_stmt is None:
             return local_stmt
         if local_stmt is None:
             return api_stmt
-        # Fill None fields in local_stmt from api_stmt
         for f in dc_fields(local_stmt):
             if getattr(local_stmt, f.name) is None:
                 api_val = getattr(api_stmt, f.name)
@@ -301,42 +266,193 @@ def _merge_extractions(local: FinancialData, api: FinancialData) -> FinancialDat
         return local_stmt
 
     for yr in local.fiscal_years:
-        local_is = local.get_income_statement(yr)
-        api_is   = api.get_income_statement(yr)
-        if local_is or api_is:
-            merged = merge_stmt(local_is, api_is)
-            if merged and merged not in local.income_statements:
-                local.income_statements.append(merged)
+        merged_is = _merge_stmt(local.get_income_statement(yr), api.get_income_statement(yr))
+        if merged_is and merged_is not local.get_income_statement(yr):
+            local.income_statements.append(merged_is)
 
-        local_bs = local.get_balance_sheet(yr)
-        api_bs   = api.get_balance_sheet(yr)
-        if local_bs or api_bs:
-            merged = merge_stmt(local_bs, api_bs)
-            if merged and merged not in local.balance_sheets:
-                local.balance_sheets.append(merged)
+        merged_bs = _merge_stmt(local.get_balance_sheet(yr), api.get_balance_sheet(yr))
+        if merged_bs and merged_bs not in local.balance_sheets:
+            local.balance_sheets.append(merged_bs)
 
-        local_cf = local.get_cash_flow(yr)
-        api_cf   = api.get_cash_flow(yr)
-        if local_cf or api_cf:
-            merged = merge_stmt(local_cf, api_cf)
-            if merged and merged not in local.cash_flow_statements:
-                local.cash_flow_statements.append(merged)
+        merged_cf = _merge_stmt(local.get_cash_flow(yr), api.get_cash_flow(yr))
+        if merged_cf and merged_cf not in local.cash_flow_statements:
+            local.cash_flow_statements.append(merged_cf)
 
-    local.metadata.overall_confidence = min(0.95,
-        local.metadata.overall_confidence * 1.1)
+    local.metadata.overall_confidence = min(
+        CONFIDENCE_API_BOOST_CAP,
+        local.metadata.overall_confidence * CONFIDENCE_API_BOOST,
+    )
     return local
+
+
+# ── Public API ────────────────────────────────────────────────────────────────
+
+def extract_from_pdf(
+    path:         str,
+    company_name: str,
+    fiscal_years: List[int],
+    currency:     str = "INR",
+    unit:         str = "Crores",
+) -> FinancialData:
+    """
+    Extract financial statements from a PDF annual report.
+
+    Strategy
+    --------
+    1. Always run local pdfplumber parser — no API needed, exact numbers.
+    2. If ANTHROPIC_API_KEY is set AND local confidence < CONFIDENCE_API_FALLBACK,
+       run a Claude API gap-fill pass and merge the results.
+    """
+    if not validate_pdf(path):
+        raise ExtractionError(f"Invalid or missing PDF: {path}")
+
+    total_pages = get_pdf_page_count(path)
+    log.info("PDF loaded: %s (%d pages)", path, total_pages)
+
+    # Pass 1 — local extraction
+    from agents.pdf_parser import extract_local
+    log.info("Local extraction: parsing financial statements from PDF text layer…")
+    financial_data = extract_local(path, company_name, fiscal_years, currency, unit)
+    conf = financial_data.metadata.overall_confidence
+    log.info(
+        "Local extraction complete. Years: %s. Confidence: %.0f%%",
+        financial_data.fiscal_years,
+        conf * 100,
+    )
+
+    # Pass 2 — optional Claude API gap-fill
+    if ANTHROPIC_API_KEY and conf < CONFIDENCE_API_FALLBACK:
+        log.info("Confidence below %.0f%% — running Claude API gap-fill…", CONFIDENCE_API_FALLBACK * 100)
+        try:
+            if total_pages > PDF_SMALL_THRESHOLD:
+                toc_b64       = extract_page_range_as_base64(path, 1, PDF_TOC_PAGES)
+                start_p, end_p = _detect_financial_pages(toc_b64, total_pages)
+                pdf_b64       = extract_page_range_as_base64(path, start_p, end_p)
+            else:
+                pdf_b64 = load_pdf_as_base64(path)
+
+            raw      = _call_extraction_api(pdf_b64, company_name, fiscal_years, currency, unit)
+            api_data = _parse_raw_data(raw)
+            financial_data = _merge_extractions(financial_data, api_data)
+            log.info("Claude API gap-fill complete.")
+        except ConfigurationError:
+            raise
+        except Exception as exc:
+            log.warning("Claude API gap-fill failed (%s) — using local extraction only.", exc)
+    elif ANTHROPIC_API_KEY:
+        log.info("Local confidence ≥ %.0f%% — skipping Claude API pass.", CONFIDENCE_API_FALLBACK * 100)
+    else:
+        log.info("No API key set — using local extraction only.")
+
+    return financial_data
 
 
 def extract_from_json(path: str) -> FinancialData:
     """
     Load financial data from a pre-structured JSON file.
-    Used for testing and manual data entry without calling the API.
+    Used for testing and manual data entry.
     """
-    data = json.loads(Path(path).read_text())
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ExtractionError(f"Could not read JSON file '{path}': {exc}") from exc
+
     financial_data = _parse_raw_data(data)
     financial_data.metadata.source_type = "manual"
     log.info(
-        f"Loaded manual data for {financial_data.company_name}. "
-        f"Years: {financial_data.fiscal_years}"
+        "Loaded manual data for %s. Years: %s",
+        financial_data.company_name,
+        financial_data.fiscal_years,
     )
     return financial_data
+
+
+def validate_relevance(financial_data: FinancialData, source_name: str = "document") -> None:
+    """
+    Raise ValidationError if the extracted data does not look like real
+    financial statements.
+
+    Checks:
+    - At least one fiscal year extracted
+    - At least one year has revenue > 0
+    - Overall extraction confidence ≥ CONFIDENCE_MIN_ACCEPT
+    """
+    years = financial_data.sorted_years()
+    if not years:
+        raise ValidationError(
+            f"'{source_name}' does not appear to contain financial statements. "
+            "Please upload an annual report, financial results PDF, or structured JSON."
+        )
+
+    has_revenue = any(
+        (stmt := financial_data.get_income_statement(y)) is not None
+        and stmt.revenue
+        and stmt.revenue > 0
+        for y in years
+    )
+    if not has_revenue:
+        raise ValidationError(
+            f"'{source_name}' yielded no revenue data. "
+            "The file may not be a financial report, or it may be a scanned image PDF "
+            "with no text layer."
+        )
+
+    if financial_data.metadata.overall_confidence < CONFIDENCE_MIN_ACCEPT:
+        raise ValidationError(
+            f"Extraction confidence for '{source_name}' is too low "
+            f"({financial_data.metadata.overall_confidence:.0%}). "
+            "The document does not appear to contain readable financial statements."
+        )
+
+
+def merge_financial_data(data_list: List[FinancialData]) -> FinancialData:
+    """
+    Merge multiple FinancialData objects (one per fiscal-year file) into a
+    single combined dataset. For duplicate fiscal years, keeps the statement
+    with the higher extraction_confidence. Company-level metadata is taken
+    from the first item.
+    """
+    if len(data_list) == 1:
+        return data_list[0]
+
+    base                  = data_list[0]
+    is_by_year:  dict     = {}
+    bs_by_year:  dict     = {}
+    cf_by_year:  dict     = {}
+    all_warnings: List[str] = []
+
+    for fd in data_list:
+        for stmt in fd.income_statements:
+            yr = stmt.fiscal_year
+            if yr not in is_by_year or stmt.extraction_confidence > is_by_year[yr].extraction_confidence:
+                is_by_year[yr] = stmt
+        for stmt in fd.balance_sheets:
+            yr = stmt.fiscal_year
+            if yr not in bs_by_year or stmt.extraction_confidence > bs_by_year[yr].extraction_confidence:
+                bs_by_year[yr] = stmt
+        for stmt in fd.cash_flow_statements:
+            yr = stmt.fiscal_year
+            if yr not in cf_by_year or stmt.extraction_confidence > cf_by_year[yr].extraction_confidence:
+                cf_by_year[yr] = stmt
+        all_warnings.extend(fd.metadata.warnings)
+
+    all_years = sorted(set(is_by_year) | set(bs_by_year) | set(cf_by_year))
+    avg_conf  = sum(fd.metadata.overall_confidence for fd in data_list) / len(data_list)
+
+    return FinancialData(
+        company_name=base.company_name,
+        ticker=base.ticker,
+        exchange=base.exchange,
+        currency=base.currency,
+        unit=base.unit,
+        fiscal_years=all_years,
+        income_statements=list(is_by_year.values()),
+        balance_sheets=list(bs_by_year.values()),
+        cash_flow_statements=list(cf_by_year.values()),
+        metadata=ExtractionMetadata(
+            source_type=base.metadata.source_type,
+            model_used=base.metadata.model_used,
+            overall_confidence=round(avg_conf, 3),
+            warnings=all_warnings,
+        ),
+    )

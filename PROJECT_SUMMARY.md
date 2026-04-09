@@ -1,7 +1,7 @@
 # Financial Analysis Automation — Project Summary
 
 > Built by Shikhar Kansal with Claude Code
-> Last updated: March 30, 2026
+> Last updated: March 31, 2026
 
 ---
 
@@ -62,7 +62,8 @@ Financial-automation/
 │
 ├── tests/
 │   └── sample_data/
-│       └── manual_input_example.json   # Example JSON input for testing
+│       ├── manual_input_example.json   # Example JSON input for testing
+│       └── tcs_fy2022_2024.json        # TCS multi-year sample dataset
 │
 ├── outputs/                     # Generated files (gitignored)
 │   ├── excel/                   # .xlsx workbooks
@@ -81,7 +82,9 @@ Financial-automation/
 
 ### Phase 1 — Core Pipeline (CLI) ✅
 - Data models for all 3 financial statements
-- Claude API-based extractor (PDF → structured JSON)
+- Hybrid PDF extractor: local pdfplumber parser runs first (no API needed); Claude API used only as a fallback gap-fill pass when local confidence < 75%
+- `validate_relevance()` guard — rejects non-financial documents before processing
+- `merge_financial_data()` — merges multiple per-year FinancialData objects into one combined dataset (deduplicates by confidence)
 - JSON manual input support
 - Logging and output management
 
@@ -112,13 +115,17 @@ Financial-automation/
 - Valuation summary
 - AI-generated commentary (Claude claude-sonnet-4-6) — requires `ANTHROPIC_API_KEY`
 - Falls back to template commentary if no API key is set
+- **AI Next Steps** (`generate_next_steps()`): generates exactly 6 prioritised analyst recommendations (title, 2-sentence description, priority: high/medium/low) grounded in the company's actual numbers
 
-### Phase 5 — Web Frontend ✅ (in progress)
+### Phase 5 — Web Frontend ✅
 - FastAPI backend with background job processing
-- Drag-and-drop PDF/JSON upload
-- Real-time progress tracking (polling)
-- Download links for Excel + Word report
-- Error handling with clean messages
+- **Multi-file upload**: accepts multiple PDFs or JSONs in one request; extracts each, validates relevance, then merges into a single dataset
+- Drag-and-drop PDF/JSON upload (navy/gold UI — `index.html` + `app.js` complete)
+- Real-time progress tracking (step-by-step polling with done flags)
+- Download link for Word report
+- AI next-steps surface in the results panel (priority-tagged cards)
+- Error handling with clean messages (HTML stripped from API errors, capped at 300 chars)
+- Job store exposes `next_steps` field via `/status/{job_id}`
 
 ---
 
@@ -134,11 +141,14 @@ cp .env.example .env
 
 ### CLI (direct)
 ```bash
-# From a JSON file
-python main.py --input tests/sample_data/manual_input_example.json
+# From a JSON file (auto-detected by .json extension)
+python main.py --input tests/sample_data/tcs_fy2022_2024.json
 
 # From a PDF
-python main.py --pdf path/to/annual_report.pdf --company "Sun Pharma" --years 2023 2024
+python main.py --input path/to/annual_report.pdf --company "Sun Pharma" --years "2022,2023,2024"
+
+# Skip Word report (Excel only)
+python main.py --input report.pdf --company "HDFC Bank" --years "2023,2024" --no-report
 ```
 
 ### Web UI
@@ -174,34 +184,37 @@ uvicorn web.app:app --reload --port 8000
 
 ## Remaining Work
 
-- [ ] **PDF extractor improvement** — pdfplumber loses row labels & prior-year column on complex layouts; need word-position-based column detection
-- [ ] **Web frontend** — `index.html` and `app.js` still need to be written
-- [ ] **API key** — add `ANTHROPIC_API_KEY` to `.env` to unlock AI commentary
+- [ ] **PDF extractor accuracy** — pdfplumber can lose row labels & prior-year column on complex multi-column layouts; word-position-based column detection would improve confidence scores
+- [ ] **Excel workbook** — `excel_builder.py` exists but the CLI and web pipeline no longer invoke it; re-wire if Excel download is needed again
 - [ ] **Charts in Word report** — embed chart images from Excel into the Word doc
-- [ ] **Multi-year PDF support** — extract 3–5 year history from a single PDF
+- [ ] **Persistent job store** — current in-memory store is lost on server restart; back with Redis or Supabase for production
+- [ ] **API key** — add `ANTHROPIC_API_KEY` to `.env` to unlock AI commentary and next steps
 
 ---
 
 ## Architecture Overview
 
 ```
-PDF / JSON
+PDF(s) / JSON(s)
     │
     ▼
-[Extractor] ──Claude API──► FinancialData object
+[Extractor — per file]
+  ├─ Pass 1: pdfplumber local parser (always, no API needed)
+  └─ Pass 2: Claude API gap-fill (only if confidence < 75%)
     │
     ▼
-[Excel Builder] ──xlsxwriter──► .xlsx (IS + BS + CF + Ratios + Valuation + Charts)
+[validate_relevance()]  ── rejects non-financial docs
     │
     ▼
-[Verifier] ──cross-checks──► VerificationReport (pass/fail + issues)
+[merge_financial_data()]  ── combines multi-file extractions
     │
     ▼
-[Analyzer] ──Claude API──► Commentary dict (section-by-section text)
+[Analyzer] ──Claude API──► Commentary dict (7 sections)
     │
-    ▼
-[Report Generator] ──python-docx──► .docx Word report
+    ├──► [Report Generator] ──python-docx──► .docx Word report
     │
-    ▼
-[Web API] ──FastAPI──► Download links for both files
+    └──► [Analyzer] ──Claude API──► Next Steps (6 prioritised items)
+                │
+                ▼
+[Web API] ──FastAPI──► /download/{id}/report + next_steps in /status/{id}
 ```

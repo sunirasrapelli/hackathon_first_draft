@@ -9,22 +9,24 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --navy:      #0D1B2A;
-      --navy-mid:  #1B2E45;
-      --navy-light:#243B55;
-      --gold:      #C9A84C;
-      --gold-light:#E8C97A;
-      --white:     #F4F6F9;
-      --muted:     #8A9BB0;
-      --success:   #2ECC71;
-      --error:     #E74C3C;
+      --bg:        #000000;
+      --surface:   #111111;
+      --surface-2: #1A1A1A;
+      --surface-3: #242424;
+      --border:    rgba(255,255,255,0.09);
+      --border-hi: rgba(255,255,255,0.25);
+      --white:     #FFFFFF;
+      --muted:     #666666;
+      --muted-hi:  #999999;
+      --success:   #4ADE80;
+      --error:     #F87171;
       --radius:    10px;
-      --shadow:    0 4px 24px rgba(0,0,0,0.35);
+      --shadow:    0 4px 28px rgba(0,0,0,0.7);
     }
 
     body {
       font-family: 'Segoe UI', system-ui, sans-serif;
-      background: var(--navy);
+      background: var(--bg);
       color: var(--white);
       min-height: 100vh;
       display: flex;
@@ -33,8 +35,8 @@
 
     /* ── Header ────────────────────────────────────────────────── */
     header {
-      background: var(--navy-mid);
-      border-bottom: 2px solid var(--gold);
+      background: var(--surface);
+      border-bottom: 1px solid var(--border-hi);
       padding: 18px 40px;
       display: flex;
       align-items: center;
@@ -42,18 +44,18 @@
     }
     .logo-icon {
       width: 42px; height: 42px;
-      background: var(--gold);
+      background: var(--white);
       border-radius: 8px;
       display: flex; align-items: center; justify-content: center;
       font-size: 22px;
     }
     .logo-text h1 { font-size: 1.35rem; font-weight: 700; letter-spacing: .5px; }
-    .logo-text p  { font-size: .75rem; color: var(--muted); margin-top: 1px; }
+    .logo-text p  { font-size: .75rem; color: var(--muted-hi); margin-top: 1px; }
     .header-badge {
       margin-left: auto;
-      background: rgba(201,168,76,.15);
-      border: 1px solid var(--gold);
-      color: var(--gold-light);
+      background: rgba(255,255,255,0.07);
+      border: 1px solid var(--border-hi);
+      color: var(--muted-hi);
       font-size: .7rem;
       font-weight: 600;
       padding: 4px 10px;
@@ -72,8 +74,8 @@
 
     /* ── Card ──────────────────────────────────────────────────── */
     .card {
-      background: var(--navy-mid);
-      border: 1px solid rgba(201,168,76,.2);
+      background: var(--surface);
+      border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 32px;
       box-shadow: var(--shadow);
@@ -84,13 +86,13 @@
       font-weight: 700;
       letter-spacing: 1.5px;
       text-transform: uppercase;
-      color: var(--gold);
+      color: var(--muted-hi);
       margin-bottom: 20px;
     }
 
     /* ── Drop Zone ─────────────────────────────────────────────── */
     #drop-zone {
-      border: 2px dashed rgba(201,168,76,.4);
+      border: 2px dashed rgba(255,255,255,0.18);
       border-radius: var(--radius);
       padding: 40px 20px;
       text-align: center;
@@ -99,39 +101,64 @@
       position: relative;
     }
     #drop-zone:hover, #drop-zone.dragover {
-      border-color: var(--gold);
-      background: rgba(201,168,76,.06);
+      border-color: var(--white);
+      background: rgba(255,255,255,0.03);
     }
     #drop-zone input[type="file"] {
       position: absolute; inset: 0; opacity: 0; cursor: pointer;
     }
     .drop-icon { font-size: 2.5rem; margin-bottom: 10px; }
-    .drop-text  { font-size: .95rem; color: var(--muted); }
-    .drop-text strong { color: var(--gold-light); }
+    .drop-text  { font-size: .95rem; color: var(--muted-hi); }
+    .drop-text strong { color: var(--white); }
     .drop-hint  { font-size: .75rem; color: var(--muted); margin-top: 6px; }
 
-    /* File selected state */
-    #file-selected {
-      display: none;
-      align-items: center;
-      gap: 12px;
-      background: rgba(46,204,113,.08);
-      border: 1px solid rgba(46,204,113,.3);
-      border-radius: 8px;
-      padding: 12px 16px;
+    /* File list */
+    #file-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
       margin-top: 14px;
     }
-    #file-selected.show { display: flex; }
-    .file-icon { font-size: 1.4rem; }
+    .file-badge {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--border-hi);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: .88rem;
+    }
+    .file-icon { font-size: 1.3rem; }
     .file-info { flex: 1; }
-    .file-name { font-size: .9rem; font-weight: 600; }
-    .file-size { font-size: .75rem; color: var(--muted); margin-top: 2px; }
+    .file-name { font-weight: 600; }
+    .file-size { font-size: .75rem; color: var(--muted-hi); margin-top: 2px; }
     .file-clear {
       background: none; border: none; color: var(--muted);
-      font-size: 1.2rem; cursor: pointer; padding: 4px;
+      font-size: 1.1rem; cursor: pointer; padding: 4px;
       transition: color .2s;
     }
     .file-clear:hover { color: var(--error); }
+    .file-count-hint {
+      font-size: .75rem;
+      color: var(--muted-hi);
+      margin-top: 10px;
+      text-align: center;
+    }
+    .file-count-hint.warn { color: var(--white); }
+
+    /* ── Multi-file notice ─────────────────────────────────────── */
+    .notice {
+      margin-top: 18px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--border-hi);
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-size: .82rem;
+      color: var(--muted-hi);
+      line-height: 1.6;
+    }
+    .notice strong { color: var(--white); }
 
     /* ── Form fields ───────────────────────────────────────────── */
     .form-grid {
@@ -147,11 +174,11 @@
       font-weight: 600;
       letter-spacing: .8px;
       text-transform: uppercase;
-      color: var(--muted);
+      color: var(--muted-hi);
     }
     input, select {
-      background: var(--navy-light);
-      border: 1px solid rgba(255,255,255,.1);
+      background: var(--surface-2);
+      border: 1px solid var(--border);
       border-radius: 6px;
       color: var(--white);
       font-size: .9rem;
@@ -159,16 +186,15 @@
       outline: none;
       transition: border-color .2s;
     }
-    input:focus, select:focus { border-color: var(--gold); }
+    input:focus, select:focus { border-color: var(--white); }
     input::placeholder { color: var(--muted); }
-    select option { background: var(--navy-mid); }
+    select option { background: var(--surface-2); }
 
-    /* ── Analyse Button ────────────────────────────────────────── */
-    #analyze-btn {
+    /* ── Primary Button ────────────────────────────────────────── */
+    .btn-primary {
       width: 100%;
-      margin-top: 24px;
-      background: var(--gold);
-      color: var(--navy);
+      background: var(--white);
+      color: var(--bg);
       border: none;
       border-radius: 8px;
       padding: 14px;
@@ -176,15 +202,15 @@
       font-weight: 700;
       letter-spacing: .5px;
       cursor: pointer;
-      transition: background .2s, transform .1s;
+      transition: opacity .2s, transform .1s;
       display: flex;
       align-items: center;
       justify-content: center;
       gap: 8px;
     }
-    #analyze-btn:hover:not(:disabled) { background: var(--gold-light); }
-    #analyze-btn:active:not(:disabled) { transform: scale(.99); }
-    #analyze-btn:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-primary:hover:not(:disabled) { opacity: .88; }
+    .btn-primary:active:not(:disabled) { transform: scale(.99); }
+    .btn-primary:disabled { opacity: .3; cursor: not-allowed; }
 
     /* ── Progress Panel ────────────────────────────────────────── */
     #progress-panel { display: none; }
@@ -198,8 +224,8 @@
     }
     .spinner {
       width: 20px; height: 20px;
-      border: 2px solid rgba(201,168,76,.2);
-      border-top-color: var(--gold);
+      border: 2px solid rgba(255,255,255,0.1);
+      border-top-color: var(--white);
       border-radius: 50%;
       animation: spin .7s linear infinite;
     }
@@ -221,29 +247,29 @@
       margin-top: 1px;
     }
     .step-indicator.pending {
-      background: rgba(255,255,255,.07);
+      background: rgba(255,255,255,0.05);
       color: var(--muted);
-      border: 1px solid rgba(255,255,255,.1);
+      border: 1px solid var(--border);
     }
     .step-indicator.active {
-      background: rgba(201,168,76,.15);
-      color: var(--gold);
-      border: 1px solid var(--gold);
+      background: rgba(255,255,255,0.1);
+      color: var(--white);
+      border: 1px solid var(--white);
       animation: pulse 1.2s ease infinite;
     }
-    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
     .step-indicator.done {
-      background: rgba(46,204,113,.15);
+      background: rgba(74,222,128,0.12);
       color: var(--success);
       border: 1px solid var(--success);
     }
     .step-indicator.error-ind {
-      background: rgba(231,76,60,.15);
+      background: rgba(248,113,113,0.12);
       color: var(--error);
       border: 1px solid var(--error);
     }
     .step-text strong { display: block; margin-bottom: 2px; }
-    .step-msg { color: var(--muted); font-size: .82rem; }
+    .step-msg { color: var(--muted-hi); font-size: .82rem; }
 
     /* ── Results Panel ─────────────────────────────────────────── */
     #results-panel { display: none; }
@@ -255,7 +281,7 @@
     }
     .check-icon {
       width: 32px; height: 32px;
-      background: rgba(46,204,113,.15);
+      background: rgba(74,222,128,0.1);
       border: 2px solid var(--success);
       border-radius: 50%;
       display: flex; align-items: center; justify-content: center;
@@ -263,16 +289,11 @@
       font-size: 1rem;
     }
     .results-title { font-size: 1rem; font-weight: 700; }
-    .results-sub   { font-size: .8rem; color: var(--muted); margin-top: 2px; }
+    .results-sub   { font-size: .8rem; color: var(--muted-hi); margin-top: 2px; }
 
-    .download-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 14px;
-    }
     .download-card {
-      background: var(--navy-light);
-      border: 1px solid rgba(255,255,255,.08);
+      background: var(--surface-2);
+      border: 1px solid var(--border);
       border-radius: 8px;
       padding: 18px;
       text-decoration: none;
@@ -283,40 +304,62 @@
       transition: border-color .2s, background .2s;
     }
     .download-card:hover {
-      border-color: var(--gold);
-      background: rgba(201,168,76,.06);
+      border-color: var(--white);
+      background: var(--surface-3);
     }
     .dl-icon { font-size: 2rem; }
-    .dl-label { font-size: .78rem; color: var(--muted); text-transform: uppercase;
+    .dl-label { font-size: .78rem; color: var(--muted-hi); text-transform: uppercase;
                 letter-spacing: .8px; font-weight: 600; }
     .dl-name  { font-size: .92rem; font-weight: 700; margin-top: 3px; }
-    .dl-arrow {
-      margin-left: auto;
-      color: var(--gold);
-      font-size: 1.2rem;
-    }
+    .dl-arrow { margin-left: auto; color: var(--white); font-size: 1.2rem; }
 
+    /* ── Next Steps ────────────────────────────────────────────── */
+    .next-step-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      padding: 14px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .next-step-row:last-child { border-bottom: none; }
+    .priority-badge {
+      font-size: .65rem;
+      font-weight: 700;
+      letter-spacing: .8px;
+      text-transform: uppercase;
+      padding: 3px 8px;
+      border-radius: 4px;
+      white-space: nowrap;
+      margin-top: 2px;
+    }
+    .priority-high   { background: rgba(255,255,255,0.12); color: var(--white);    border: 1px solid rgba(255,255,255,0.3); }
+    .priority-medium { background: rgba(255,255,255,0.06); color: var(--muted-hi); border: 1px solid var(--border-hi); }
+    .priority-low    { background: rgba(255,255,255,0.03); color: var(--muted);    border: 1px solid var(--border); }
+    .next-step-body strong { display: block; font-size: .9rem; margin-bottom: 4px; }
+    .next-step-body span   { font-size: .8rem; color: var(--muted-hi); line-height: 1.5; }
+
+    /* ── New Analysis Button ───────────────────────────────────── */
     #new-analysis-btn {
-      width: 100%; margin-top: 16px;
+      width: 100%; margin-top: 20px;
       background: none;
-      border: 1px solid rgba(255,255,255,.15);
+      border: 1px solid var(--border);
       border-radius: 8px;
-      color: var(--muted);
+      color: var(--muted-hi);
       padding: 11px;
       font-size: .88rem;
       cursor: pointer;
       transition: border-color .2s, color .2s;
     }
-    #new-analysis-btn:hover { border-color: var(--gold); color: var(--gold); }
+    #new-analysis-btn:hover { border-color: var(--white); color: var(--white); }
 
     /* ── Error Banner ──────────────────────────────────────────── */
     #error-banner {
       display: none;
-      background: rgba(231,76,60,.1);
-      border: 1px solid rgba(231,76,60,.4);
+      background: rgba(248,113,113,0.08);
+      border: 1px solid rgba(248,113,113,0.3);
       border-radius: 8px;
       padding: 14px 16px;
-      color: #F1948A;
+      color: var(--error);
       font-size: .88rem;
       margin-top: 16px;
     }
@@ -329,15 +372,16 @@
       gap: 16px;
     }
     .how-step {
-      background: var(--navy-light);
+      background: var(--surface-2);
+      border: 1px solid var(--border);
       border-radius: 8px;
       padding: 16px;
       text-align: center;
     }
     .how-num {
       width: 28px; height: 28px;
-      background: var(--gold);
-      color: var(--navy);
+      background: var(--white);
+      color: var(--bg);
       border-radius: 50%;
       font-size: .78rem;
       font-weight: 700;
@@ -345,7 +389,7 @@
       margin: 0 auto 10px;
     }
     .how-title { font-size: .82rem; font-weight: 700; margin-bottom: 4px; }
-    .how-desc  { font-size: .72rem; color: var(--muted); line-height: 1.5; }
+    .how-desc  { font-size: .72rem; color: var(--muted-hi); line-height: 1.5; }
 
     /* ── Footer ────────────────────────────────────────────────── */
     footer {
@@ -353,14 +397,238 @@
       padding: 20px;
       font-size: .72rem;
       color: var(--muted);
-      border-top: 1px solid rgba(255,255,255,.05);
+      border-top: 1px solid var(--border);
     }
 
     /* ── Responsive ────────────────────────────────────────────── */
     @media (max-width: 600px) {
-      .form-grid, .download-grid, .steps-row { grid-template-columns: 1fr; }
+      .form-grid, .steps-row { grid-template-columns: 1fr; }
       header { padding: 14px 20px; }
       .card  { padding: 20px; }
+    }
+
+    /* ── Floating Chat Widget ──────────────────────────────────── */
+    #chat-widget {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 1000;
+      display: none;  /* shown by JS once analysis is complete */
+    }
+
+    /* Collapsed FAB button */
+    #chat-fab {
+      width: 56px; height: 56px;
+      border-radius: 50%;
+      background: var(--white);
+      color: var(--bg);
+      border: none;
+      font-size: 1.4rem;
+      cursor: pointer;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.55);
+      transition: transform .2s, box-shadow .2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+    #chat-fab:hover { transform: scale(1.07); box-shadow: 0 6px 28px rgba(0,0,0,0.7); }
+
+    /* Unread dot */
+    #chat-unread {
+      position: absolute;
+      top: 4px; right: 4px;
+      width: 10px; height: 10px;
+      background: var(--success);
+      border-radius: 50%;
+      border: 2px solid var(--bg);
+      display: none;
+    }
+    #chat-unread.show { display: block; }
+
+    /* Expanded panel — sits above the FAB */
+    #chat-panel {
+      display: none;
+      flex-direction: column;
+      position: absolute;
+      bottom: 68px;
+      right: 0;
+      width: 360px;
+      height: 500px;
+      background: var(--surface);
+      border: 1px solid var(--border-hi);
+      border-radius: 14px;
+      box-shadow: 0 10px 48px rgba(0,0,0,0.65);
+      overflow: hidden;
+      transform-origin: bottom right;
+      animation: popIn .18s ease;
+    }
+    @keyframes popIn {
+      from { opacity: 0; transform: scale(.94) translateY(8px); }
+      to   { opacity: 1; transform: scale(1)   translateY(0);   }
+    }
+    #chat-panel.open { display: flex; }
+
+    #chat-panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 13px 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface-2);
+      flex-shrink: 0;
+    }
+    .chat-panel-title {
+      font-size: .8rem;
+      font-weight: 700;
+      letter-spacing: .4px;
+    }
+    .chat-panel-sub {
+      font-size: .68rem;
+      color: var(--muted-hi);
+      margin-top: 1px;
+    }
+    #chat-panel-close {
+      background: none;
+      border: none;
+      color: var(--muted-hi);
+      font-size: .95rem;
+      cursor: pointer;
+      padding: 4px 6px;
+      border-radius: 4px;
+      line-height: 1;
+      transition: color .15s;
+    }
+    #chat-panel-close:hover { color: var(--white); }
+
+    #chat-messages {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      overflow-y: auto;
+      padding: 14px 14px 6px;
+      scroll-behavior: smooth;
+    }
+    #chat-messages::-webkit-scrollbar { width: 3px; }
+    #chat-messages::-webkit-scrollbar-track { background: transparent; }
+    #chat-messages::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
+
+    .chat-msg { display: flex; gap: 8px; align-items: flex-start; }
+    .chat-msg.user { flex-direction: row-reverse; }
+
+    .chat-avatar {
+      width: 26px; height: 26px; min-width: 26px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: .65rem; font-weight: 700;
+      flex-shrink: 0;
+    }
+    .chat-msg.user .chat-avatar { background: var(--white); color: var(--bg); }
+    .chat-msg.ai   .chat-avatar {
+      background: var(--surface-3);
+      color: var(--muted-hi);
+      border: 1px solid var(--border-hi);
+    }
+
+    .chat-bubble {
+      max-width: 82%;
+      padding: 9px 13px;
+      border-radius: 10px;
+      font-size: .845rem;
+      line-height: 1.65;
+      word-break: break-word;
+    }
+    .chat-msg.user .chat-bubble {
+      background: var(--white);
+      color: var(--bg);
+      border-bottom-right-radius: 3px;
+      white-space: pre-wrap;
+    }
+    .chat-msg.ai .chat-bubble {
+      background: var(--surface-2);
+      color: var(--white);
+      border: 1px solid var(--border);
+      border-bottom-left-radius: 3px;
+    }
+    /* Markdown elements inside AI bubbles */
+    .chat-bubble strong { font-weight: 700; }
+    .chat-bubble em     { font-style: italic; }
+    .chat-bubble code {
+      background: rgba(255,255,255,0.1);
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: .82em;
+    }
+    .chat-bubble ul, .chat-bubble ol {
+      padding-left: 18px;
+      margin: 4px 0;
+    }
+    .chat-bubble li { margin: 2px 0; }
+    .chat-bubble p  { margin: 0 0 6px; }
+    .chat-bubble p:last-child { margin-bottom: 0; }
+
+    /* Typing dots */
+    .typing-dot {
+      display: inline-block;
+      width: 6px; height: 6px;
+      background: var(--muted-hi);
+      border-radius: 50%;
+      animation: blink 1.2s ease infinite;
+      margin: 0 2px;
+    }
+    .typing-dot:nth-child(2) { animation-delay: .2s; }
+    .typing-dot:nth-child(3) { animation-delay: .4s; }
+    @keyframes blink { 0%,80%,100%{opacity:.2} 40%{opacity:1} }
+
+    #chat-input-row {
+      display: flex;
+      align-items: flex-end;
+      gap: 8px;
+      padding: 10px 12px;
+      border-top: 1px solid var(--border);
+      background: var(--surface-2);
+      flex-shrink: 0;
+    }
+    #chat-input {
+      flex: 1;
+      background: var(--surface-3);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--white);
+      font-size: .875rem;
+      padding: 8px 12px;
+      outline: none;
+      resize: none;
+      transition: border-color .2s;
+      font-family: inherit;
+      min-height: 36px;
+      max-height: 96px;
+      line-height: 1.5;
+    }
+    #chat-input:focus { border-color: rgba(255,255,255,0.4); }
+    #chat-input::placeholder { color: var(--muted); }
+
+    #chat-send {
+      width: 36px; height: 36px; min-width: 36px;
+      background: var(--white);
+      color: var(--bg);
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: opacity .2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    #chat-send:hover:not(:disabled) { opacity: .82; }
+    #chat-send:disabled { opacity: .3; cursor: not-allowed; }
+
+    @media (max-width: 420px) {
+      #chat-panel { width: calc(100vw - 48px); right: 0; }
     }
   </style>
 </head>
@@ -381,26 +649,25 @@
 
   <!-- Upload Card -->
   <div class="card" id="upload-card">
-    <div class="card-title">📂 Upload Financial Report</div>
+    <div class="card-title">Upload Financial Report</div>
 
     <!-- Drop Zone -->
     <div id="drop-zone">
-      <input type="file" id="file-input" accept=".json,.pdf" />
+      <input type="file" id="file-input" accept=".json,.pdf" multiple />
       <div class="drop-icon">☁️</div>
       <div class="drop-text">
-        <strong>Click to upload</strong> or drag & drop
+        <strong>Click to upload</strong> or drag &amp; drop
       </div>
-      <div class="drop-hint">Supports: JSON (structured data) · PDF (annual report)</div>
+      <div class="drop-hint">Supports: JSON · PDF &nbsp;·&nbsp; Select multiple files at once</div>
     </div>
 
-    <!-- Selected file badge -->
-    <div id="file-selected">
-      <span class="file-icon" id="file-type-icon">📄</span>
-      <div class="file-info">
-        <div class="file-name" id="file-name-label">—</div>
-        <div class="file-size" id="file-size-label">—</div>
-      </div>
-      <button class="file-clear" id="file-clear-btn" title="Remove file">✕</button>
+    <!-- File list -->
+    <div id="file-list"></div>
+    <div class="file-count-hint" id="file-count-hint" style="display:none;"></div>
+
+    <!-- Multi-file notice -->
+    <div class="notice">
+      <strong>Upload the data of at least 3 fiscal years</strong> — for accurate trend analysis, ratio calculations, and AI next steps. You can upload PDFs or JSON files together.
     </div>
 
     <!-- Form Fields -->
@@ -433,7 +700,7 @@
       </div>
     </div>
 
-    <button id="analyze-btn" disabled>
+    <button id="analyze-btn" class="btn-primary" disabled style="margin-top:24px;">
       <span>⚡</span> Run Financial Analysis
     </button>
 
@@ -442,7 +709,7 @@
 
   <!-- Progress Card -->
   <div class="card" id="progress-panel">
-    <div class="card-title">⚙️ Analysis in Progress</div>
+    <div class="card-title">Analysis in Progress</div>
     <div class="progress-header">
       <div class="spinner" id="main-spinner"></div>
       <span id="progress-headline">Initialising pipeline…</span>
@@ -455,25 +722,25 @@
           <span class="step-msg" id="msg-extract">Waiting…</span>
         </div>
       </li>
-      <li class="step-item" data-step="excel">
-        <div class="step-indicator pending" id="ind-excel">2</div>
+      <li class="step-item" data-step="commentary">
+        <div class="step-indicator pending" id="ind-commentary">2</div>
         <div class="step-text">
-          <strong>Excel Workbook</strong>
-          <span class="step-msg" id="msg-excel">Waiting…</span>
-        </div>
-      </li>
-      <li class="step-item" data-step="verify">
-        <div class="step-indicator pending" id="ind-verify">3</div>
-        <div class="step-text">
-          <strong>Verification</strong>
-          <span class="step-msg" id="msg-verify">Waiting…</span>
+          <strong>AI Commentary</strong>
+          <span class="step-msg" id="msg-commentary">Waiting…</span>
         </div>
       </li>
       <li class="step-item" data-step="report">
-        <div class="step-indicator pending" id="ind-report">4</div>
+        <div class="step-indicator pending" id="ind-report">3</div>
         <div class="step-text">
-          <strong>AI Commentary & Report</strong>
+          <strong>Word Report</strong>
           <span class="step-msg" id="msg-report">Waiting…</span>
+        </div>
+      </li>
+      <li class="step-item" data-step="next_steps">
+        <div class="step-indicator pending" id="ind-next_steps">4</div>
+        <div class="step-text">
+          <strong>AI Next Steps</strong>
+          <span class="step-msg" id="msg-next_steps">Waiting…</span>
         </div>
       </li>
     </ul>
@@ -488,30 +755,28 @@
         <div class="results-sub" id="results-sub">Your files are ready to download</div>
       </div>
     </div>
-    <div class="download-grid">
-      <a class="download-card" id="dl-excel" href="#" download>
-        <span class="dl-icon">📗</span>
-        <div>
-          <div class="dl-label">Excel Workbook</div>
-          <div class="dl-name">IS · BS · CF · Ratios · DCF</div>
-        </div>
-        <span class="dl-arrow">↓</span>
-      </a>
-      <a class="download-card" id="dl-report" href="#" download>
-        <span class="dl-icon">📘</span>
-        <div>
-          <div class="dl-label">Word Report</div>
-          <div class="dl-name">Full Analysis with Commentary</div>
-        </div>
-        <span class="dl-arrow">↓</span>
-      </a>
+
+    <a class="download-card" id="dl-report" href="#" download style="text-decoration:none;">
+      <span class="dl-icon">📘</span>
+      <div>
+        <div class="dl-label">Word Report</div>
+        <div class="dl-name">Full AI Analysis with Commentary</div>
+      </div>
+      <span class="dl-arrow">↓</span>
+    </a>
+
+    <!-- Next Steps -->
+    <div id="next-steps-section" style="margin-top:24px; display:none;">
+      <div class="card-title" style="margin-bottom:14px;">Recommended Next Steps</div>
+      <div id="next-steps-list"></div>
     </div>
+
     <button id="new-analysis-btn">+ Start New Analysis</button>
   </div>
 
   <!-- How it works -->
   <div class="card">
-    <div class="card-title">💡 How It Works</div>
+    <div class="card-title">How It Works</div>
     <div class="steps-row">
       <div class="how-step">
         <div class="how-num">1</div>
@@ -521,24 +786,49 @@
       <div class="how-step">
         <div class="how-num">2</div>
         <div class="how-title">Extract</div>
-        <div class="how-desc">AI parses all three financial statements with confidence scoring</div>
+        <div class="how-desc">AI parses each file's financial statements, validates relevance, and merges all years</div>
       </div>
       <div class="how-step">
         <div class="how-num">3</div>
         <div class="how-title">Analyse</div>
-        <div class="how-desc">Excel workbook with IS, BS, CF, 30+ ratios, DCF, DDM & comps</div>
+        <div class="how-desc">AI generates investment-grade commentary across trends, margins, ratios, and risks</div>
       </div>
       <div class="how-step">
         <div class="how-num">4</div>
-        <div class="how-title">Report</div>
-        <div class="how-desc">AI-written investment-grade commentary exported as Word doc</div>
+        <div class="how-title">Chat</div>
+        <div class="how-desc">Ask follow-up questions and get precise answers grounded in the generated report</div>
       </div>
     </div>
   </div>
 
 </main>
 
-<footer>FinAnalyse AI · Built with Claude · For educational & professional use</footer>
+<footer>FinAnalyse AI · Built with Claude · For educational &amp; professional use</footer>
+
+<!-- ── Floating Chat Widget ───────────────────────────────────────── -->
+<div id="chat-widget">
+  <!-- Expanded panel (shown when open) -->
+  <div id="chat-panel">
+    <div id="chat-panel-header">
+      <div>
+        <div class="chat-panel-title">Ask about this report</div>
+        <div class="chat-panel-sub" id="chat-panel-sub">Powered by Claude</div>
+      </div>
+      <button id="chat-panel-close" title="Close">✕</button>
+    </div>
+    <div id="chat-messages"></div>
+    <div id="chat-input-row">
+      <textarea id="chat-input" placeholder="Ask a question…" rows="1"></textarea>
+      <button id="chat-send" title="Send (Enter)">↑</button>
+    </div>
+  </div>
+
+  <!-- FAB toggle button -->
+  <button id="chat-fab" title="Ask about this report">
+    💬
+    <span id="chat-unread"></span>
+  </button>
+</div>
 
 <script src="/static/app.js"></script>
 </body>
