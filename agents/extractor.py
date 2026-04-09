@@ -246,7 +246,7 @@ def _parse_raw_data(raw: dict) -> FinancialData:
 
 # ── Extraction merge ──────────────────────────────────────────────────────────
 
-def _merge_extractions(local: FinancialData, api: FinancialData) -> FinancialData:
+def _merge_extractions(local_data: FinancialData, api_data: FinancialData) -> FinancialData:
     """
     Merge local + API extractions: prefer local values (exact pixel-level),
     fill None fields with API values.  Boosts overall confidence slightly.
@@ -265,24 +265,27 @@ def _merge_extractions(local: FinancialData, api: FinancialData) -> FinancialDat
                     object.__setattr__(local_stmt, f.name, api_val)
         return local_stmt
 
-    for yr in local.fiscal_years:
-        merged_is = _merge_stmt(local.get_income_statement(yr), api.get_income_statement(yr))
-        if merged_is and merged_is not local.get_income_statement(yr):
-            local.income_statements.append(merged_is)
+    for yr in local_data.fiscal_years:
+        orig_is   = local_data.get_income_statement(yr)
+        merged_is = _merge_stmt(orig_is, api_data.get_income_statement(yr))
+        if merged_is and (id(merged_is) != id(orig_is)):
+            local_data.income_statements.append(merged_is)
 
-        merged_bs = _merge_stmt(local.get_balance_sheet(yr), api.get_balance_sheet(yr))
-        if merged_bs and merged_bs not in local.balance_sheets:
-            local.balance_sheets.append(merged_bs)
+        orig_bs   = local_data.get_balance_sheet(yr)
+        merged_bs = _merge_stmt(orig_bs, api_data.get_balance_sheet(yr))
+        if merged_bs and (id(merged_bs) != id(orig_bs)) and merged_bs not in local_data.balance_sheets:
+            local_data.balance_sheets.append(merged_bs)
 
-        merged_cf = _merge_stmt(local.get_cash_flow(yr), api.get_cash_flow(yr))
-        if merged_cf and merged_cf not in local.cash_flow_statements:
-            local.cash_flow_statements.append(merged_cf)
+        orig_cf   = local_data.get_cash_flow(yr)
+        merged_cf = _merge_stmt(orig_cf, api_data.get_cash_flow(yr))
+        if merged_cf and (id(merged_cf) != id(orig_cf)) and merged_cf not in local_data.cash_flow_statements:
+            local_data.cash_flow_statements.append(merged_cf)
 
-    local.metadata.overall_confidence = min(
+    local_data.metadata.overall_confidence = min(
         CONFIDENCE_API_BOOST_CAP,
-        local.metadata.overall_confidence * CONFIDENCE_API_BOOST,
+        local_data.metadata.overall_confidence * CONFIDENCE_API_BOOST,
     )
-    return local
+    return local_data
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
