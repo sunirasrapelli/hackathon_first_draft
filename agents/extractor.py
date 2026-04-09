@@ -104,6 +104,10 @@ def _detect_financial_pages(pdf_b64: str, total_pages: int) -> Tuple[int, int]:
         if match:
             data = json.loads(match.group())
             sp, ep = int(data["start_page"]), int(data["end_page"])
+            # Ensure we always extract a meaningful page window — single-page or
+            # very narrow ranges can miss statements that span multiple pages.
+            if ep - sp < 20:
+                ep = min(total_pages, sp + 40)
             log.info("TOC detection: financial statements on pages %d–%d", sp, ep)
             return sp, ep
         log.warning("TOC detection: no JSON found in response: %r", resp.content[0].text[:200])
@@ -356,6 +360,8 @@ def extract_from_pdf(
                 len(raw.get("cash_flow_statements", [])),
             )
             api_data = _parse_raw_data(raw)
+            for _is in api_data.income_statements:
+                log.info("  API IS year=%s revenue=%s", _is.fiscal_year, _is.revenue)
 
             if not local_has_revenue:
                 # Local got nothing useful — use API result directly, don't merge into empty shell
