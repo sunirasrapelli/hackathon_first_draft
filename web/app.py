@@ -153,7 +153,20 @@ async def auto_detect(file: UploadFile = File(...)) -> JSONResponse:
             return JSONResponse({"company_name": "", "fiscal_years": []})
         try:
             import base64
-            b64 = base64.b64encode(content).decode()
+            import io
+            import pypdf
+
+            # Only send first 5 pages to Claude — cover + TOC has all we need
+            reader = pypdf.PdfReader(io.BytesIO(content))
+            total  = len(reader.pages)
+            pages_to_send = min(5, total)
+            writer = pypdf.PdfWriter()
+            for i in range(pages_to_send):
+                writer.add_page(reader.pages[i])
+            buf = io.BytesIO()
+            writer.write(buf)
+            b64 = base64.b64encode(buf.getvalue()).decode()
+
             client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
             resp = client.messages.create(
                 model=MODEL_NAME,
