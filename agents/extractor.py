@@ -103,11 +103,15 @@ def _detect_financial_pages(pdf_b64: str, total_pages: int) -> Tuple[int, int]:
         match = re.search(r'\{"start_page".*?\}', resp.content[0].text, re.DOTALL)
         if match:
             data = json.loads(match.group())
-            return int(data["start_page"]), int(data["end_page"])
+            sp, ep = int(data["start_page"]), int(data["end_page"])
+            log.info("TOC detection: financial statements on pages %d–%d", sp, ep)
+            return sp, ep
+        log.warning("TOC detection: no JSON found in response: %r", resp.content[0].text[:200])
     except Exception as exc:
         log.warning("TOC detection failed (%s) — falling back to last third.", exc)
 
     start = max(1, total_pages * 2 // 3)
+    log.info("TOC fallback: using pages %d–%d", start, total_pages)
     return start, total_pages
 
 
@@ -345,6 +349,12 @@ def extract_from_pdf(
                 pdf_b64 = load_pdf_as_base64(path)
 
             raw      = _call_extraction_api(pdf_b64, company_name, fiscal_years, currency, unit)
+            log.info(
+                "API raw: %d income stmts, %d balance sheets, %d cash flows",
+                len(raw.get("income_statements", [])),
+                len(raw.get("balance_sheets", [])),
+                len(raw.get("cash_flow_statements", [])),
+            )
             api_data = _parse_raw_data(raw)
 
             if not local_has_revenue:
