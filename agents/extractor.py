@@ -323,25 +323,44 @@ def extract_from_pdf(
         conf * 100,
     )
 
-    # Pass 2 — optional Claude API gap-fill
-    if ANTHROPIC_API_KEY and conf < CONFIDENCE_API_FALLBACK:
-        log.info("Confidence below %.0f%% — running Claude API gap-fill…", CONFIDENCE_API_FALLBACK * 100)
+    # Pass 2 — Claude API gap-fill
+    # Triggered when: API key present AND (confidence below threshold OR local got zero revenue)
+    local_has_revenue = any(
+        (s := financial_data.get_income_statement(y)) is not None and s.revenue and s.revenue > 0
+        for y in (financial_data.fiscal_years or [])
+    )
+    needs_api = ANTHROPIC_API_KEY and (conf < CONFIDENCE_API_FALLBACK or not local_has_revenue)
+
+    if needs_api:
+        log.info(
+            "Running Claude API extraction (confidence=%.0f%%, local_revenue=%s)…",
+            conf * 100, local_has_revenue,
+        )
         try:
             if total_pages > PDF_SMALL_THRESHOLD:
-                toc_b64       = extract_page_range_as_base64(path, 1, PDF_TOC_PAGES)
+                toc_b64        = extract_page_range_as_base64(path, 1, PDF_TOC_PAGES)
                 start_p, end_p = _detect_financial_pages(toc_b64, total_pages)
-                pdf_b64       = extract_page_range_as_base64(path, start_p, end_p)
+                pdf_b64        = extract_page_range_as_base64(path, start_p, end_p)
             else:
                 pdf_b64 = load_pdf_as_base64(path)
 
             raw      = _call_extraction_api(pdf_b64, company_name, fiscal_years, currency, unit)
             api_data = _parse_raw_data(raw)
-            financial_data = _merge_extractions(financial_data, api_data)
-            log.info("Claude API gap-fill complete.")
+
+            if not local_has_revenue:
+                # Local got nothing useful — use API result directly, don't merge into empty shell
+                api_data.metadata.overall_confidence = min(
+                    CONFIDENCE_API_BOOST_CAP,
+                    api_data.metadata.overall_confidence * CONFIDENCE_API_BOOST,
+                )
+                financial_data = api_data
+            else:
+                financial_data = _merge_extractions(financial_data, api_data)
+            log.info("Claude API extraction complete.")
         except ConfigurationError:
             raise
         except Exception as exc:
-            log.warning("Claude API gap-fill failed (%s) — using local extraction only.", exc)
+            log.warning("Claude API extraction failed (%s) — using local extraction only.", exc)
     elif ANTHROPIC_API_KEY:
         log.info("Local confidence ≥ %.0f%% — skipping Claude API pass.", CONFIDENCE_API_FALLBACK * 100)
     else:
